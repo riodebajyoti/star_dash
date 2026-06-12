@@ -77,7 +77,7 @@
       return { x:120, y:280, w:40, h:46, vx:0, vy:0,
                onGround:false, jumpCount:0, jumpHeld:false,
                facingRight:true, iframes:0, aframe:0, atick:0,
-               pu:{speed:0, jump:0, shield:0} };
+               pu:{speed:0, jump:0, shield:0, life:0} };
     }
 
     const PCOLS = ['#ff6b6b','#ffa94d','#69db7c','#74c0fc','#da77f2','#ffd43b'];
@@ -106,11 +106,16 @@
       // Scatter power-ups on floating platforms
       powerups=[];
       let floats=platforms.filter(p=>p.type==='float');
+      // Regular power-ups (speed/jump/shield only)
+      const BUFF_TYPES=PU_TYPES.filter(t=>t.type!=='life');
       for (let i=3;i<floats.length;i+=5+Math.floor(Math.random()*4)){
         let fp=floats[i];
-        let t=PU_TYPES[Math.floor(Math.random()*PU_TYPES.length)];
+        let t=BUFF_TYPES[Math.floor(Math.random()*BUFF_TYPES.length)];
         powerups.push({x:fp.x+fp.w/2,y:fp.y-36,type:t.type,phase:rand(0,6.28),collected:false});
       }
+      // One heart hidden somewhere in the middle of the level
+      let heartPlat=floats[Math.floor(floats.length/2+rand(-3,3))];
+      if (heartPlat) powerups.push({x:heartPlat.x+heartPlat.w/2,y:heartPlat.y-40,type:'life',phase:rand(0,6.28),collected:false});
     }
 
     function rand(a,b){return a+Math.random()*(b-a);}
@@ -120,6 +125,7 @@
       {type:'speed',  icon:'⚡', color:'#ffd43b', glow:'#f76707', label:'Speed!'},
       {type:'jump',   icon:'↑↑', color:'#74c0fc', glow:'#1971c2', label:'Super Jump!'},
       {type:'shield', icon:'★',  color:'#da77f2', glow:'#7c3aed', label:'Shield!'},
+      {type:'life',   icon:'♥',  color:'#ff6b6b', glow:'#c92a2a', label:'+1 Life!'},
     ];
 
     function beginGame() {
@@ -205,10 +211,17 @@
         pu.phase+=0.06;
         if (cr(pu.x,pu.y,18,player)) {
           pu.collected=true;
-          player.pu[pu.type]=PU_DURATION;
           let info=PU_TYPES.find(t=>t.type===pu.type);
-          burst(pu.x,pu.y,[info.color,info.glow,'#fff'],16,true);
-          score+=150;
+          if (pu.type==='life'){
+            lives=Math.min(lives+1,5);
+            player.pu.life=90;
+            burst(pu.x,pu.y,['#ff6b6b','#ff8787','#ffd700'],20,false);
+            score+=300;
+          } else {
+            player.pu[pu.type]=PU_DURATION;
+            burst(pu.x,pu.y,[info.color,info.glow,'#fff'],16,true);
+            score+=150;
+          }
         }
       }
 
@@ -608,16 +621,36 @@
         ctx.save();
         ctx.translate(px,pu.y+bob);
         ctx.shadowColor=info.glow;ctx.shadowBlur=20+Math.sin(pu.phase*2)*6;
-        // Orb
-        let gr=ctx.createRadialGradient(-3,-4,2,0,0,18);
-        gr.addColorStop(0,'#fff');gr.addColorStop(0.35,info.color);gr.addColorStop(1,info.glow);
-        ctx.fillStyle=gr;
-        ctx.beginPath();ctx.arc(0,0,18,0,Math.PI*2);ctx.fill();
-        ctx.strokeStyle='rgba(255,255,255,0.85)';ctx.lineWidth=2.5;ctx.stroke();
-        // Icon
-        ctx.shadowBlur=0;ctx.fillStyle='white';
-        ctx.font='bold 15px Arial';ctx.textAlign='center';ctx.textBaseline='middle';
-        ctx.fillText(info.icon,0,1);
+
+        if (pu.type==='life'){
+          // Beating heart shape
+          let sc=1+Math.sin(pu.phase*2)*0.08;
+          ctx.scale(sc,sc);
+          let hg=ctx.createRadialGradient(-4,-6,2,0,0,18);
+          hg.addColorStop(0,'#ff8787');hg.addColorStop(1,'#c92a2a');
+          ctx.fillStyle=hg;
+          ctx.beginPath();
+          ctx.moveTo(0,6);
+          ctx.bezierCurveTo(0,-4,-16,-8,-16,1);
+          ctx.bezierCurveTo(-16,9,0,20,0,24);
+          ctx.bezierCurveTo(0,20,16,9,16,1);
+          ctx.bezierCurveTo(16,-8,0,-4,0,6);
+          ctx.fill();
+          ctx.strokeStyle='rgba(255,255,255,0.7)';ctx.lineWidth=2;ctx.stroke();
+          // Shine
+          ctx.shadowBlur=0;ctx.fillStyle='rgba(255,255,255,0.45)';
+          ctx.beginPath();ctx.ellipse(-5,-4,5,3,-0.5,0,Math.PI*2);ctx.fill();
+        } else {
+          // Orb for other power-ups
+          let gr=ctx.createRadialGradient(-3,-4,2,0,0,18);
+          gr.addColorStop(0,'#fff');gr.addColorStop(0.35,info.color);gr.addColorStop(1,info.glow);
+          ctx.fillStyle=gr;
+          ctx.beginPath();ctx.arc(0,0,18,0,Math.PI*2);ctx.fill();
+          ctx.strokeStyle='rgba(255,255,255,0.85)';ctx.lineWidth=2.5;ctx.stroke();
+          ctx.shadowBlur=0;ctx.fillStyle='white';
+          ctx.font='bold 15px Arial';ctx.textAlign='center';ctx.textBaseline='middle';
+          ctx.fillText(info.icon,0,1);
+        }
         ctx.restore();
       }
     }
