@@ -43,10 +43,17 @@
     const W = canvas.width, H = canvas.height;
 
     const GRAVITY = 0.55, JUMP_VEL = -13.5, SPEED = 4.2, LEVEL_W = 5200;
+    const DAY_DURATION = 5400; // 90 seconds at 60fps
 
     let state = 'menu';
     let score, lives, camX = 0, levelNum, tick = 0, screenShake = 0;
     let player, platforms, stars, enemies, particles, powerups;
+    let dayTimer=DAY_DURATION, nightFall=false;
+
+    function lerpC(c1,c2,f){
+      f=Math.max(0,Math.min(1,f));
+      return `rgb(${Math.round(c1[0]+(c2[0]-c1[0])*f)},${Math.round(c1[1]+(c2[1]-c1[1])*f)},${Math.round(c1[2]+(c2[2]-c1[2])*f)})`;
+    }
 
     // ── Input ────────────────────────────────────────────────────────────────
     const keys = {};
@@ -130,6 +137,7 @@
 
     function beginGame() {
       score=0;lives=3;camX=0;levelNum=1;tick=0;screenShake=0;
+      dayTimer=DAY_DURATION;nightFall=false;
       player=makePlayer();particles=[];powerups=[];
       buildLevel();state='play';
     }
@@ -148,6 +156,8 @@
       tick++;
       if (screenShake>0) screenShake-=0.7;
       if (state!=='play') return;
+      if (dayTimer>0){ dayTimer--; }
+      else { nightFall=true; state='over'; return; }
 
       let spd=player.pu.speed>0?SPEED*1.9:SPEED;
       if (keys['ArrowLeft'])       {player.vx=-spd;player.facingRight=false;}
@@ -170,7 +180,7 @@
         if (!ro(player,p)) continue;
         if (p.type==='goal') {
           score+=500; burst(player.x+20,player.y,['#a78bfa','#ffd700','#fff'],28,true);
-          levelNum++;buildLevel();
+          levelNum++;buildLevel();dayTimer=DAY_DURATION;
           player.x=120;player.y=280;player.vx=0;player.vy=0;camX=0;continue;
         }
         if (player.vy>=0&&player.y+player.h-player.vy<=p.y+4) {
@@ -275,42 +285,87 @@
 
     // ── Background ────────────────────────────────────────────────────────────
     function drawBG() {
-      // Bright sky
+      let t=dayTimer/DAY_DURATION; // 1=full day, 0=full night
+
+      // Sky gradient — blends day→sunset→night
+      let skyTop,skyMid,skyBot;
+      if (t>0.55){
+        skyTop='#4fc3f7';skyMid='#81d4fa';skyBot='#b3e5fc';
+      } else if (t>0.25){
+        let f=(t-0.25)/0.3;
+        skyTop=lerpC([255,80,20],[79,195,247],f);
+        skyMid=lerpC([255,130,50],[129,212,250],f);
+        skyBot=lerpC([255,190,90],[179,229,252],f);
+      } else {
+        let f=t/0.25;
+        skyTop=lerpC([5,5,35],[255,80,20],f);
+        skyMid=lerpC([10,10,55],[255,130,50],f);
+        skyBot=lerpC([18,18,75],[255,190,90],f);
+      }
       let sg=ctx.createLinearGradient(0,0,0,H);
-      sg.addColorStop(0,'#4fc3f7');
-      sg.addColorStop(0.55,'#81d4fa');
-      sg.addColorStop(1,'#b3e5fc');
+      sg.addColorStop(0,skyTop);sg.addColorStop(0.55,skyMid);sg.addColorStop(1,skyBot);
       ctx.fillStyle=sg;ctx.fillRect(0,0,W,H);
 
-      // Sun
-      ctx.save();
-      ctx.shadowColor='rgba(255,220,0,0.6)';ctx.shadowBlur=30;
-      let sunR=ctx.createRadialGradient(72,60,4,72,60,40);
-      sunR.addColorStop(0,'#fff9c4');sunR.addColorStop(0.5,'#ffd600');sunR.addColorStop(1,'#ffab00');
-      ctx.fillStyle=sunR;
-      ctx.beginPath();ctx.arc(72,60,40,0,Math.PI*2);ctx.fill();
-      // rays
-      ctx.strokeStyle='rgba(255,214,0,0.45)';ctx.lineWidth=4;ctx.lineCap='round';
-      for (let i=0;i<8;i++){
-        let a=(i/8)*Math.PI*2+tick*0.008;
-        ctx.beginPath();
-        ctx.moveTo(72+Math.cos(a)*48,60+Math.sin(a)*48);
-        ctx.lineTo(72+Math.cos(a)*66,60+Math.sin(a)*66);
-        ctx.stroke();
-      }
-      ctx.restore();
-
-      // Clouds
-      for (let i=0;i<6;i++){
-        let cx=((i*260+80-camX*0.14)%(W+320)+W+320)%(W+320)-160;
-        let cy=70+(i%3)*55;
-        drawCloud(cx,cy,0.75+(i%3)*0.2);
+      // Night stars (appear when t < 0.45)
+      if (t<0.45){
+        let sa=Math.min(1,(0.45-t)/0.2);
+        for (let i=0;i<70;i++){
+          let sx=(i*137+53)%W, sy=(i*91+19)%(H*0.62);
+          let tw=0.5+Math.sin(tick*0.05+i)*0.5;
+          ctx.fillStyle=`rgba(255,255,255,${sa*tw*0.95})`;
+          ctx.beginPath();ctx.arc(sx,sy,0.5+(i%3)*0.6,0,Math.PI*2);ctx.fill();
+        }
       }
 
-      // Far hills
-      drawHills(camX*0.18,390,55,'#66bb6a');
-      // Near hills
-      drawHills(camX*0.32,420,35,'#43a047');
+      // Sun — arcs left→right, sets below horizon
+      let sunProgress=1-t;
+      let sunX=W*0.08+sunProgress*W*0.86;
+      let sunY=H*0.28-Math.sin(sunProgress*Math.PI)*H*0.22;
+      let sunVisible=sunY<H-60&&t>0.02;
+      if (sunVisible){
+        ctx.save();
+        let isSunset=t<0.45;
+        ctx.shadowColor=isSunset?'rgba(255,80,0,0.7)':'rgba(255,220,0,0.6)';
+        ctx.shadowBlur=isSunset?40:30;
+        let sr=ctx.createRadialGradient(sunX,sunY,4,sunX,sunY,40);
+        if (isSunset){
+          sr.addColorStop(0,'#ffe0b0');sr.addColorStop(0.5,'#ff7043');sr.addColorStop(1,'#c62828');
+        } else {
+          sr.addColorStop(0,'#fff9c4');sr.addColorStop(0.5,'#ffd600');sr.addColorStop(1,'#ffab00');
+        }
+        ctx.fillStyle=sr;
+        ctx.globalAlpha=Math.min(1,t>0.08?1:t/0.08);
+        ctx.beginPath();ctx.arc(sunX,sunY,40,0,Math.PI*2);ctx.fill();
+        if (!isSunset){
+          ctx.strokeStyle='rgba(255,214,0,0.45)';ctx.lineWidth=4;ctx.lineCap='round';
+          for (let i=0;i<8;i++){
+            let a=(i/8)*Math.PI*2+tick*0.008;
+            ctx.beginPath();
+            ctx.moveTo(sunX+Math.cos(a)*48,sunY+Math.sin(a)*48);
+            ctx.lineTo(sunX+Math.cos(a)*66,sunY+Math.sin(a)*66);
+            ctx.stroke();
+          }
+        }
+        ctx.restore();
+      }
+
+      // Clouds (fade out at sunset)
+      let ca=Math.max(0,Math.min(1,(t-0.2)/0.35));
+      if (ca>0){
+        ctx.globalAlpha=ca;
+        for (let i=0;i<6;i++){
+          let cx=((i*260+80-camX*0.14)%(W+320)+W+320)%(W+320)-160;
+          let cy=70+(i%3)*55;
+          drawCloud(cx,cy,0.75+(i%3)*0.2);
+        }
+        ctx.globalAlpha=1;
+      }
+
+      // Hills — darken toward night silhouette
+      let h1=t>0.3?'#66bb6a':lerpC([15,25,15],[102,187,106],t/0.3);
+      let h2=t>0.3?'#43a047':lerpC([8,16,8],[67,160,71],t/0.3);
+      drawHills(camX*0.18,390,55,h1);
+      drawHills(camX*0.32,420,35,h2);
     }
 
     function drawCloud(x,y,sc){
@@ -709,6 +764,23 @@
         ctx.fillStyle=pg;rr(W/2-64,38,128*(col/tot),8,4);ctx.fill();
       }
 
+      // Day/night timer bar — full width at top of canvas
+      let t=dayTimer/DAY_DURATION;
+      let barW=W-20;
+      ctx.fillStyle='rgba(0,0,0,0.25)';rr(10,H-16,barW,8,4);ctx.fill();
+      let barCol=t>0.5?'#ffd700':t>0.25?lerpC([255,80,20],[255,215,0],(t-0.25)/0.25):'#e03131';
+      ctx.fillStyle=barCol;rr(10,H-16,barW*t,8,4);ctx.fill();
+      // Sun icon on the bar
+      let sunBX=10+barW*t;
+      ctx.fillStyle='white';ctx.font='14px Arial';ctx.textAlign='center';ctx.textBaseline='middle';
+      ctx.fillText(t>0.15?'☀️':'🌙',sunBX,H-12);
+      // Low-time warning flash
+      if (t<0.2&&Math.floor(tick/18)%2===0){
+        ctx.fillStyle='rgba(220,50,50,0.22)';ctx.fillRect(0,0,W,H);
+        ctx.fillStyle='#ff4444';ctx.font='bold 22px Arial';ctx.textAlign='center';ctx.textBaseline='alphabetic';
+        ctx.fillText('⚠ NIGHT IS COMING! ⚠',W/2,H-26);
+      }
+
       // Active power-up pills
       let puX=10;
       for (let info of PU_TYPES){
@@ -782,14 +854,25 @@
 
     // ── Game Over ─────────────────────────────────────────────────────────────
     function drawGameOver(){
-      ctx.fillStyle='rgba(0,0,0,0.55)';ctx.fillRect(0,0,W,H);
+      ctx.fillStyle=nightFall?'rgba(5,5,40,0.75)':'rgba(0,0,0,0.55)';
+      ctx.fillRect(0,0,W,H);
 
       ctx.save();ctx.textAlign='center';
-      ctx.font='bold 68px Arial';
-      ctx.strokeStyle='#7f1d1d';ctx.lineWidth=7;ctx.lineJoin='round';
-      ctx.strokeText('GAME OVER',W/2,188);
-      ctx.shadowColor='#ff6b6b';ctx.shadowBlur=20;
-      ctx.fillStyle='#ff6b6b';ctx.fillText('GAME OVER',W/2,188);
+      if (nightFall){
+        ctx.font='bold 54px Arial';
+        ctx.strokeStyle='#1a1a4a';ctx.lineWidth=7;ctx.lineJoin='round';
+        ctx.strokeText('🌙 NIGHT FELL!',W/2,175);
+        ctx.shadowColor='#7c3aed';ctx.shadowBlur=24;
+        ctx.fillStyle='#c084fc';ctx.fillText('🌙 NIGHT FELL!',W/2,175);
+        ctx.shadowBlur=0;ctx.fillStyle='rgba(255,255,255,0.7)';
+        ctx.font='20px Arial';ctx.fillText('Too dark to play — try again before sunset!',W/2,215);
+      } else {
+        ctx.font='bold 68px Arial';
+        ctx.strokeStyle='#7f1d1d';ctx.lineWidth=7;ctx.lineJoin='round';
+        ctx.strokeText('GAME OVER',W/2,188);
+        ctx.shadowColor='#ff6b6b';ctx.shadowBlur=20;
+        ctx.fillStyle='#ff6b6b';ctx.fillText('GAME OVER',W/2,188);
+      }
       ctx.restore();
 
       ctx.textAlign='center';
