@@ -215,7 +215,7 @@
 
       if (player.x<0) player.x=0;
       if (player.x+player.w>LEVEL_W) player.x=LEVEL_W-player.w;
-      if (player.y>H+80) loseLife();
+      if (player.y>H+80) loseLife(true);
 
       for (let s of stars) {
         if (s.collected) continue;
@@ -235,7 +235,7 @@
         if (player.vy>1&&player.y+player.h<e.y+e.h*0.5+8) {
           e.dead=true;player.vy=JUMP_VEL*0.55;score+=200;
           burst(e.x+20,e.y+20,['#ff6b6b','#ffd700','#fff'],14,false);
-        } else loseLife();
+        } else loseLife(true);
       }
       enemies=enemies.filter(e=>!e.dead);
 
@@ -263,9 +263,13 @@
           t.angle += t.speed;
           let sx = t.x + Math.cos(t.angle) * t.length;
           let sy = t.y + Math.sin(t.angle) * t.length;
-          if (player.iframes <= 0 && player.pu.shield <= 0 && cr(sx, sy, t.r, player)) loseLife();
+          if (player.iframes <= 0 && player.pu.shield <= 0 && cr(sx, sy, t.r, player)) {
+            loseLife(false); // Pass false to not reset player position
+          }
         } else if (t.type === 'spike') {
-          if (player.iframes <= 0 && player.pu.shield <= 0 && ro(player, t)) loseLife();
+          if (player.iframes <= 0 && player.pu.shield <= 0 && ro(player, t)) {
+            loseLife(false); // Pass false to not reset player position
+          }
         }
       }
 
@@ -285,11 +289,27 @@
       player.atick++;if(player.atick>7){player.atick=0;player.aframe^=1;}
     }
 
-    function loseLife() {
+    function loseLife(reset = true) {
       burst(player.x+20,player.y+22,['#ff6b6b','#ff8787','#ffa8a8'],20,false);
-      screenShake=10;lives--;
-      if (lives<=0){state='over';return;}
-      player.x=120;player.y=280;player.vx=0;player.vy=0;player.iframes=130;camX=0;
+      screenShake=10;
+      lives--;
+      if (lives <= 0) {
+        state = 'over';
+        return;
+      }
+      
+      player.iframes = 120; // 2 seconds of invincibility
+      if (reset) {
+        player.x = 120;
+        player.y = 280;
+        player.vx = 0;
+        player.vy = 0;
+        camX = 0;
+      } else {
+        // Knockback effect if not resetting
+        player.vy = -8;
+        player.vx = player.facingRight ? -5 : 5;
+      }
     }
 
     function ro(a,b){return a.x<b.x+b.w&&a.x+a.w>b.x&&a.y<b.y+b.h&&a.y+a.h>b.y;}
