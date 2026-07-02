@@ -47,7 +47,7 @@
 
     let state = 'menu';
     let score, lives, camX = 0, levelNum, tick = 0, screenShake = 0;
-    let player, platforms, stars, enemies, particles, powerups;
+    let player, platforms, stars, enemies, particles, powerups, traps;
     let dayTimer=DAY_DURATION, nightFall=false;
 
     function lerpC(c1,c2,f){
@@ -89,16 +89,32 @@
 
     const PCOLS = ['#ff6b6b','#ffa94d','#69db7c','#74c0fc','#da77f2','#ffd43b'];
     function buildLevel() {
-      platforms=[]; stars=[]; enemies=[];
+      platforms=[]; stars=[]; enemies=[]; traps=[];
       let gx=0;
       while (gx<LEVEL_W) {
         let gw=200+Math.random()*350;
         platforms.push({x:gx,y:440,w:gw,h:60,type:'ground'});
+        
+        // Add spikes on ground occasionally
+        if (gx > 400 && Math.random() > 0.7) {
+            let numSpikes = 1 + Math.floor(Math.random() * 3);
+            let spikeX = gx + 40 + Math.random() * (gw - 120);
+            for(let s=0; s<numSpikes; s++) {
+                traps.push({x: spikeX + s*30, y: 440-20, w: 30, h: 20, type: 'spike'});
+            }
+        }
+        
         gx+=gw+(Math.random()>0.55?70+Math.random()*80:0);
       }
       for (let i=0;i<45;i++) {
         let fx=280+i*105+rand(-40,40), fy=170+rand(0,200), fw=70+rand(0,110);
         platforms.push({x:fx,y:fy,w:fw,h:20,type:'float',col:PCOLS[i%PCOLS.length]});
+        
+        // Add spikes on floating platforms
+        if (Math.random() > 0.8 && fw > 60) {
+            traps.push({x: fx + fw/2 - 15, y: fy - 20, w: 30, h: 20, type: 'spike'});
+        }
+
         for (let j=0;j<1+Math.floor(Math.random()*3);j++)
           if (Math.random()>0.35)
             stars.push({x:fx+15+j*32,y:fy-32,collected:false,phase:rand(0,6.28),spin:0});
@@ -108,6 +124,13 @@
                         left:fx,right:fx+fw-38,aframe:0,atick:0,bob:rand(0,6.28)});
         }
       }
+      
+      // Add some swinging saw blades in larger gaps
+      for (let i=0; i<10; i++) {
+          let sx = 600 + i * 500 + rand(-100, 100);
+          traps.push({x: sx, y: 150, r: 25, type: 'saw', angle: rand(0, Math.PI*2), speed: 0.03 + Math.random()*0.02, length: 120 + rand(0, 60)});
+      }
+
       platforms.push({x:LEVEL_W-160,y:290,w:160,h:24,type:'goal'});
 
       // Scatter power-ups on floating platforms
@@ -138,7 +161,7 @@
     function beginGame() {
       score=0;lives=3;camX=0;levelNum=1;tick=0;screenShake=0;
       dayTimer=DAY_DURATION;nightFall=false;
-      player=makePlayer();particles=[];powerups=[];
+      player=makePlayer();particles=[];powerups=[];traps=[];
       buildLevel();state='play';
     }
 
@@ -232,6 +255,17 @@
             burst(pu.x,pu.y,[info.color,info.glow,'#fff'],16,true);
             score+=150;
           }
+        }
+      }
+
+      for (let t of traps) {
+        if (t.type === 'saw') {
+          t.angle += t.speed;
+          let sx = t.x + Math.cos(t.angle) * t.length;
+          let sy = t.y + Math.sin(t.angle) * t.length;
+          if (player.iframes <= 0 && player.pu.shield <= 0 && cr(sx, sy, t.r, player)) loseLife();
+        } else if (t.type === 'spike') {
+          if (player.iframes <= 0 && player.pu.shield <= 0 && ro(player, t)) loseLife();
         }
       }
 
@@ -486,6 +520,67 @@
         ctx.fillStyle=sg;ctx.fill();
         ctx.strokeStyle='rgba(255,255,255,0.7)';ctx.lineWidth=1.5;ctx.stroke();
         ctx.restore();
+      }
+    }
+
+    function drawTraps(){
+      for (let t of traps){
+        let tx = t.x - camX;
+        if (t.type === 'spike') {
+          if (tx < -40 || tx > W + 40) continue;
+          ctx.fillStyle = '#adb5bd';
+          ctx.strokeStyle = '#495057';
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.moveTo(tx, t.y + t.h);
+          ctx.lineTo(tx + t.w/2, t.y);
+          ctx.lineTo(tx + t.w, t.y + t.h);
+          ctx.closePath();
+          ctx.fill(); ctx.stroke();
+          // Add some shine
+          ctx.fillStyle = 'rgba(255,255,255,0.3)';
+          ctx.beginPath();
+          ctx.moveTo(tx + 5, t.y + t.h - 2);
+          ctx.lineTo(tx + t.w/2, t.y + 4);
+          ctx.lineTo(tx + t.w/2 + 2, t.y + t.h - 2);
+          ctx.fill();
+        } else if (t.type === 'saw') {
+          let sx = tx + Math.cos(t.angle) * t.length;
+          let sy = t.y + Math.sin(t.angle) * t.length;
+          
+          // Draw chain
+          ctx.strokeStyle = '#495057';
+          ctx.lineWidth = 3;
+          ctx.beginPath();
+          ctx.moveTo(tx, t.y);
+          ctx.lineTo(sx, sy);
+          ctx.stroke();
+          
+          // Draw pivot
+          ctx.fillStyle = '#343a40';
+          ctx.beginPath(); ctx.arc(tx, t.y, 6, 0, Math.PI*2); ctx.fill();
+          
+          // Draw saw
+          ctx.save();
+          ctx.translate(sx, sy);
+          ctx.rotate(tick * 0.2);
+          ctx.fillStyle = '#ced4da';
+          ctx.strokeStyle = '#495057';
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          for(let i=0; i<12; i++) {
+              let a = (i/12) * Math.PI * 2;
+              let r1 = t.r, r2 = t.r * 0.7;
+              ctx.lineTo(Math.cos(a)*r1, Math.sin(a)*r1);
+              ctx.lineTo(Math.cos(a+0.1)*r2, Math.sin(a+0.1)*r2);
+          }
+          ctx.closePath();
+          ctx.fill(); ctx.stroke();
+          // Center of saw
+          ctx.fillStyle = '#adb5bd';
+          ctx.beginPath(); ctx.arc(0, 0, t.r*0.4, 0, Math.PI*2); ctx.fill();
+          ctx.restore();
+        }
       }
     }
 
@@ -901,7 +996,7 @@
       if (screenShake>0){ctx.save();ctx.translate(rand(-screenShake,screenShake),rand(-screenShake,screenShake));}
       drawBG();
       if (state==='play'||state==='over'){
-        drawPlatforms();drawStars();drawPowerups();drawEnemies();drawParticles();drawPlayer();drawHUD();
+        drawPlatforms();drawTraps();drawStars();drawPowerups();drawEnemies();drawParticles();drawPlayer();drawHUD();
       }
       if (state==='menu') drawMenu();
       if (state==='over') drawGameOver();
