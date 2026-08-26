@@ -126,9 +126,10 @@
       }
       
       // Add some swinging saw blades in larger gaps
-      for (let i=0; i<10; i++) {
-          let sx = 600 + i * 500 + rand(-100, 100);
-          traps.push({x: sx, y: 150, r: 25, type: 'saw', angle: rand(0, Math.PI*2), speed: 0.03 + Math.random()*0.02, length: 120 + rand(0, 60)});
+      let sawCount = 10 + Math.floor(diff*3);
+      for (let i=0; i<sawCount; i++) {
+          let sx = 600 + i * (LEVEL_W - 800) / sawCount + rand(-100, 100);
+          traps.push({x: sx, y: 150, r: 25, type: 'saw', angle: rand(0, Math.PI*2), speed: 0.03 + Math.random()*0.02 + diff*0.008, length: 120 + rand(0, 60)});
       }
 
       platforms.push({x:LEVEL_W-160,y:290,w:160,h:24,type:'goal'});
