@@ -90,37 +90,38 @@
     const PCOLS = ['#ff6b6b','#ffa94d','#69db7c','#74c0fc','#da77f2','#ffd43b'];
     function buildLevel() {
       platforms=[]; stars=[]; enemies=[]; traps=[];
+      let diff = 1 + (levelNum - 1) * 0.12; // difficulty scales per level
       let gx=0;
       while (gx<LEVEL_W) {
         let gw=200+Math.random()*350;
         platforms.push({x:gx,y:440,w:gw,h:60,type:'ground'});
         
         // Add spikes on ground occasionally
-        if (gx > 400 && Math.random() > 0.7) {
-            let numSpikes = 1 + Math.floor(Math.random() * 3);
+        if (gx > 400 && Math.random() > (0.7 - diff*0.08)) {
+            let numSpikes = 1 + Math.floor(Math.random() * (2 + Math.floor(diff)));
             let spikeX = gx + 40 + Math.random() * (gw - 120);
             for(let s=0; s<numSpikes; s++) {
                 traps.push({x: spikeX + s*30, y: 440-20, w: 30, h: 20, type: 'spike'});
             }
         }
         
-        gx+=gw+(Math.random()>0.55?70+Math.random()*80:0);
+        gx+=gw+(Math.random()>(0.55 - diff*0.05)?70+Math.random()*(80+diff*20):0);
       }
       for (let i=0;i<45;i++) {
         let fx=280+i*105+rand(-40,40), fy=170+rand(0,200), fw=70+rand(0,110);
         platforms.push({x:fx,y:fy,w:fw,h:20,type:'float',col:PCOLS[i%PCOLS.length]});
         
         // Add spikes on floating platforms
-        if (Math.random() > 0.8 && fw > 60) {
+        if (Math.random() > (0.8 - diff*0.05) && fw > 60) {
             traps.push({x: fx + fw/2 - 15, y: fy - 20, w: 30, h: 20, type: 'spike'});
         }
 
         for (let j=0;j<1+Math.floor(Math.random()*3);j++)
           if (Math.random()>0.35)
             stars.push({x:fx+15+j*32,y:fy-32,collected:false,phase:rand(0,6.28),spin:0});
-        if (Math.random()>0.62 && fw>80) {
+        if (Math.random()>(0.62 - diff*0.05) && fw>80) {
           let d=Math.random()>0.5?1:-1;
-          enemies.push({x:fx+10,y:fy-42,w:40,h:40,vx:1.3*d,
+          enemies.push({x:fx+10,y:fy-42,w:40,h:40,vx:(1.3+diff*0.25)*d,
                         left:fx,right:fx+fw-38,aframe:0,atick:0,bob:rand(0,6.28)});
         }
       }
